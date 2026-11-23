@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Panadda Recycle POS</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>♻️</text></svg>">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Prompt', sans-serif; touch-action: manipulation; user-select: none; }
+    .active-press:active { transform: scale(0.96); }
+    @keyframes popIn {
+      from { opacity: 0; transform: scale(0.92) translateY(8px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    @keyframes slideInRight {
+      from { opacity: 0; transform: translateX(24px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    .anim-pop { animation: popIn 0.16s ease-out forwards; }
+    .anim-toast { animation: slideInRight 0.2s ease-out forwards; }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 h-screen overflow-hidden flex flex-col">
+
+  <div id="toast-container" class="fixed top-4 right-4 z-[80] flex flex-col gap-2.5 pointer-events-none max-w-sm w-full px-4 sm:px-0"></div>
+
+  <div id="ui-dialog-overlay" class="hidden fixed inset-0 z-[75] bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div id="ui-dialog-box" class="anim-pop bg-slate-900 border border-slate-700/90 rounded-3xl w-full max-w-md p-6 shadow-2xl">
+      <div class="flex items-start gap-3.5 mb-3">
+        <div id="ui-dialog-icon" class="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0"></div>
+        <div class="flex-1 min-w-0">
+          <h3 id="ui-dialog-title" class="text-lg font-bold text-white leading-snug"></h3>
+          <p id="ui-dialog-msg" class="text-sm text-slate-300 mt-1 whitespace-pre-line leading-relaxed"></p>
+        </div>
+      </div>
+      <div id="ui-dialog-inputs" class="space-y-2.5 my-4 hidden"></div>
+      <div id="ui-dialog-actions" class="flex gap-2.5 justify-end mt-5"></div>
+    </div>
+  </div>
+
+  <div id="pin-screen" class="fixed inset-0 z-50 bg-slate-950 flex flex-col items-center justify-center p-4">
+    <div class="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl text-center">
+      <div class="w-16 h-16 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto mb-3 text-3xl font-bold">♻️</div>
+      <h1 class="text-2xl font-bold text-white">Panadda Recycle</h1>
+      <p class="text-slate-400 text-sm mb-5">กดรหัส PIN เพื่อเข้าใช้งาน</p>
+      <div id="pin-dots" class="bg-slate-950 border border-slate-800 rounded-2xl py-4 mb-4 text-3xl tracking-[0.6em] font-bold text-emerald-400 h-16 flex items-center justify-center">••••</div>
+      <p id="pin-error" class="text-red-400 text-sm h-5 mb-2"></p>
+      <div class="grid grid-cols-3 gap-3">
+        <button onclick="pressPin('1')" class="active-press bg-slate-800 hover:bg-slate-700 text-2xl font-bold py-4 rounded-2xl">1</button>
+        <button onclick="pressPin('2')" class="active-press bg-slate-800 hover:bg-slate-700 text-2xl font-bold py-4 rounded-2xl">2</button>
+        <button onclick="pressPin('3')" class="active-press bg-slate-800 hover:bg-slate-700 text-2xl font-bold py-4 rounded-2xl">3</button>
+        <button onclick="pressPin('4')" class="active-press bg-slate-800 hover:bg-slate-700 text-2xl font-bold py-4 rounded-2xl">4</button>
+        <button onclick="pressPin('5')" class="active-press bg-slate-800 hover:bg-slate-700 text-2xl font-bold py-4 rounded-2xl">5</button>
+        <button onclick="pressPin('6')" class="active-press bg-slate-800 hover:bg-slate-700 text-2xl font-bold py-4 rounded-2xl">6</button>
+        <button onclick="pressPin('7')" class="active-press bg-slate-800 hover:bg-slate-700 text-2xl font-bold py-4 rounded-2xl">7</button>
+        <button onclick="pressPin('8')" class="active-press bg-slate-800 hover:bg-slate-700 text-2xl font-bold py-4 rounded-2xl">8</button>
+        <button onclick="pressPin('9')" class="active-press bg-slate-800 hover:bg-slate-700 text-2xl font-bold py-4 rounded-2xl">9</button>
+        <button onclick="clearPin()" class="active-press bg-red-900/40 text-red-300 text-lg font-semibold py-4 rounded-2xl">ล้าง</button>
+        <button onclick="pressPin('0')" class="active-press bg-slate-800 hover:bg-slate-700 text-2xl font-bold py-4 rounded-2xl">0</button>
+        <button onclick="submitPin()" class="active-press bg-emerald-600 hover:bg-emerald-500 text-white text-lg font-bold py-4 rounded-2xl">ตกลง</button>
+      </div>
+    </div>
+  </div>
+
+  <header class="bg-slate-950 border-b border-slate-800 px-4 py-2.5 flex items-center justify-between shrink-0 overflow-x-auto">
+    <div class="flex items-center gap-2">
+      <span class="text-lg font-bold text-emerald-400 mr-1">♻️ Panadda</span>
+      <nav class="flex gap-1.5">
+        <button id="nav-pos" data-tab="pos" onclick="switchTab('pos')" class="tab-btn px-3.5 py-2 rounded-xl font-semibold text-sm bg-emerald-600 text-white whitespace-nowrap">ชั่งรับซื้อ (POS)</button>
+        <button id="nav-drawer" data-tab="drawer" onclick="switchTab('drawer')" class="tab-btn hidden px-3.5 py-2 rounded-xl font-semibold text-sm bg-slate-800 text-slate-300 whitespace-nowrap">ลิ้นชัก & บิลวันนี้</button>
+        <button id="nav-sell" data-tab="sell" onclick="switchTab('sell')" class="tab-btn hidden px-3.5 py-2 rounded-xl font-semibold text-sm bg-slate-800 text-slate-300 whitespace-nowrap">ส่งขายโรงงาน 🚚 <span id="transit-badge" class="hidden ml-1 bg-amber-500 text-slate-950 text-xs font-extrabold px-1.5 rounded-full">0</span></button>
+        <button id="nav-owner" data-tab="owner" onclick="switchTab('owner')" class="tab-btn hidden px-3.5 py-2 rounded-xl font-semibold text-sm bg-slate-800 text-slate-300 whitespace-nowrap">เจ้าของร้าน 📊</button>
+      </nav>
+    </div>
+
+    <div class="flex items-center gap-2.5 shrink-0">
+      <button id="btn-quick-add-item" onclick="openAddItemModal()" class="hidden bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold px-3 py-2 rounded-xl">+ เพิ่มสินค้า</button>
+      <div id="drawer-badge" class="hidden bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-xl text-xs">
+        ลิ้นชัก: <span id="top-drawer-amt" class="font-bold text-emerald-400">ยังไม่เปิดกะ</span>
+      </div>
+      <button onclick="logoutPin()" class="bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-xl text-xs flex items-center gap-2">
+        <span id="user-display" class="font-semibold text-slate-200">-</span>
+        <span class="text-red-400 font-bold">สลับคน</span>
+      </button>
+    </div>
+  </header>
+
+  <main id="view-pos" class="flex-1 flex overflow-hidden">
+    <section class="w-[64%] flex flex-col p-3 border-r border-slate-800 overflow-hidden">
+      <div class="flex gap-2 mb-3 shrink-0">
+        <input id="search-input" oninput="renderItemGrid()" type="text" placeholder="🔍 พิมพ์ค้นหาด่วน เช่น ทด, หล, ขวด..." class="flex-1 bg-slate-800 border border-slate-700 rounded-2xl px-4 py-3 text-base text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500" />
+        <button onclick="openCustomItemModal()" class="active-press bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-3 rounded-2xl shrink-0">+ รายการอื่นๆ / เหมา</button>
+      </div>
+      <div id="items-grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 overflow-y-auto pr-1 pb-6"></div>
+    </section>
+
+    <aside class="w-[36%] bg-slate-950 flex flex-col justify-between p-3 overflow-hidden">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-2 shrink-0">
+        <div>
+          <h2 class="font-bold text-lg">รายการชั่งปัจจุบัน</h2>
+          <p class="text-xs text-slate-400">แตะที่รายการเพื่อแก้ไขน้ำหนัก/ราคา</p>
+        </div>
+        <div class="flex gap-1.5">
+          <button onclick="holdCurrentBill()" class="bg-amber-600/20 text-amber-400 border border-amber-500/40 px-3 py-1.5 rounded-xl text-xs font-bold">พักบิล (<span id="hold-count">0</span>)</button>
+          <button onclick="clearCart()" class="bg-red-900/30 text-red-400 px-2.5 py-1.5 rounded-xl text-xs font-bold">ล้าง</button>
+        </div>
+      </div>
+
+      <div id="cart-list" class="flex-1 overflow-y-auto space-y-2 pr-1">
+        <div class="text-center text-slate-500 py-16">แตะรูปสินค้าฝั่งซ้ายเพื่อเริ่มชั่งกิโล</div>
+      </div>
+
+      <div class="border-t border-slate-800 pt-3 mt-2 shrink-0">
+        <div class="flex justify-between text-sm text-slate-400 mb-1">
+          <span>น้ำหนักสุทธิรวม: <strong id="cart-total-kg" class="text-slate-200">0</strong> กก.</span>
+          <span>จำนวน <strong id="cart-item-count" class="text-slate-200">0</strong> เข่ง</span>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3 mb-3 flex justify-between items-baseline">
+          <span class="text-slate-400 font-medium">ยอดจ่ายสุทธิ</span>
+          <span class="text-4xl font-extrabold text-emerald-400"><span id="cart-total-amt">0</span> <small class="text-base font-normal">฿</small></span>
+        </div>
+        <button onclick="openCheckoutModal()" class="active-press w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xl font-bold py-4 rounded-2xl shadow-lg">💰 จ่ายเงิน / บันทึกบิล</button>
+      </div>
+    </aside>
+  </main>
+
+  <main id="view-drawer" class="hidden flex-1 overflow-y-auto p-4 space-y-4">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="bg-slate-950 border border-slate-800 rounded-3xl p-5">
+        <h3 class="font-bold text-lg mb-3">จัดการกะลิ้นชักวันนี้</h3>
+        <div id="shift-panel-content"></div>
+      </div>
+
+      <div class="bg-slate-950 border border-slate-800 rounded-3xl p-5 lg:col-span-2">
+        <h3 class="font-bold text-lg mb-3">เติมเงิน / เบิกจ่ายจิปาถะ (ลิ้นชักหน้าร้าน)</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+          <select id="mv-type" class="bg-slate-800 border border-slate-700 rounded-xl px-3 py-3 text-white font-semibold">
+            <option value="CASH_IN">➕ เติมเงินสดเข้าลิ้นชัก</option>
+            <option value="EXPENSE_OUT">➖ เบิกจ่ายค่าใช้จ่าย (น้ำมัน/น้ำแข็ง)</option>
+          </select>
+          <input id="mv-amount" type="number" placeholder="จำนวนเงิน (บาท)" class="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white font-bold" />
+          <input id="mv-note" type="text" placeholder="หมายเหตุ (บังคับระบุ)" class="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white" />
+        </div>
+        <button onclick="saveDrawerMovement()" class="active-press bg-sky-600 hover:bg-sky-500 text-white font-bold px-6 py-3 rounded-xl">บันทึกรายการลิ้นชัก</button>
+      </div>
+    </div>
+
+    <div class="bg-slate-950 border border-slate-800 rounded-3xl p-5">
+      <div class="flex justify-between items-center mb-3">
+        <h3 class="font-bold text-lg">ประวัติบิลวันนี้ (แก้ไข / ยกเลิกบิล)</h3>
+        <button onclick="loadDrawerView()" class="bg-slate-800 px-3 py-1.5 rounded-xl text-xs">🔄 รีเฟรช</button>
+      </div>
+      <div id="today-bills-list" class="space-y-2"></div>
+    </div>
+  </main>
+
+  <main id="view-sell" class="hidden flex-1 overflow-y-auto p-4 space-y-4">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <div class="lg:col-span-5 bg-slate-950 border border-slate-800 rounded-3xl p-5">
+        <h3 class="font-bold text-lg text-amber-400 mb-1">1. ตักของขึ้นรถ / ตัดกองเตรียมขาย</h3>
+        <p class="text-xs text-slate-400 mb-4">เมื่อกดตัดกอง หน้าลานจะเริ่มนับสต็อกกองใหม่ที่ 0 กก. ทันทีโดยไม่ปนกับของบนรถ</p>
+
+        <div class="space-y-3">
+          <input id="ship-factory" type="text" placeholder="ชื่อโรงงาน / ทะเบียนรถบรรทุก" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white" />
+          <div>
+            <label class="text-xs text-slate-400">สินค้าหลักที่ส่งขาย</label>
+            <select id="ship-main-item" onchange="renderBundleCheckboxes()" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white font-semibold mt-1"></select>
+          </div>
+          <div class="flex items-center gap-4 bg-slate-900 p-3 rounded-xl border border-slate-800">
+            <label class="flex items-center gap-2 text-sm font-semibold cursor-pointer">
+              <input id="ship-clear-all" type="checkbox" checked onchange="togglePartialWeight()" class="w-5 h-5 accent-emerald-500" />
+              กวาดหมดกอง (ล้างสต็อกเป็น 0)
+            </label>
+            <input id="ship-partial-kg" type="number" placeholder="ระบุ กก. ที่ตักออก" class="hidden flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white" />
+          </div>
+          <div>
+            <label class="text-xs text-amber-300 font-semibold">ติ๊กพ่วงล้างกองของคละ/สายไฟที่ปอกรวมไปกับกองนี้ (ถ้ามี):</label>
+            <div id="ship-bundle-list" class="mt-1.5 max-h-40 overflow-y-auto space-y-1.5 bg-slate-900 p-3 rounded-xl border border-slate-800"></div>
+          </div>
+          <button onclick="createShipment()" class="active-press w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3.5 rounded-2xl">🚚 บันทึกนำของขึ้นรถ (รอใบชั่ง)</button>
+        </div>
+      </div>
+
+      <div class="lg:col-span-7 space-y-4">
+        <div class="bg-slate-950 border border-amber-500/40 rounded-3xl p-5">
+          <h3 class="font-bold text-lg text-amber-400 mb-3">2. กำลังส่งขาย / รอใบชั่งโรงงาน</h3>
+          <div id="in-transit-list" class="space-y-3"></div>
+        </div>
+
+        <div class="bg-slate-950 border border-slate-800 rounded-3xl p-5">
+          <h3 class="font-bold text-lg text-emerald-400 mb-3">ประวัติขายออกโรงงานที่ปิดยอดแล้ว</h3>
+          <div id="completed-sell-list" class="space-y-2"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <main id="view-owner" class="hidden flex-1 overflow-y-auto p-4 space-y-4">
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div class="bg-slate-950 border border-slate-800 rounded-3xl p-4">
+        <div class="text-xs text-slate-400">เงินสดในลิ้นชัก (กะนี้)</div>
+        <div id="ow-drawer" class="text-2xl font-extrabold text-emerald-400 mt-1">0 ฿</div>
+      </div>
+      <div class="bg-slate-950 border border-amber-500/40 rounded-3xl p-4">
+        <div class="flex justify-between items-center">
+          <span class="text-xs text-amber-300">เงินสดในตู้เซฟสำรอง</span>
+          <button onclick="adjustSafeWallet()" class="text-xs bg-amber-600/30 text-amber-300 px-2 py-0.5 rounded-lg">+ เติม/ถอนเซฟ</button>
+        </div>
+        <div id="ow-safe" class="text-2xl font-extrabold text-amber-400 mt-1">0 ฿</div>
+      </div>
+      <div class="bg-slate-950 border border-slate-800 rounded-3xl p-4">
+        <div class="text-xs text-sky-400">บัญชีธนาคารสะสม</div>
+        <div id="ow-bank" class="text-2xl font-extrabold text-sky-400 mt-1">0 ฿</div>
+      </div>
+      <div class="bg-slate-950 border border-red-500/40 rounded-3xl p-4">
+        <div class="text-xs text-red-300">บิลถูกยกเลิก/แก้ไข (7 วัน)</div>
+        <div id="ow-void-count" class="text-2xl font-extrabold text-red-400 mt-1">0 ใบ</div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="bg-slate-950 border border-slate-800 rounded-3xl p-5">
+        <h3 class="font-bold text-base mb-3">สัดส่วนเงินจมในสต็อก แยกตามหมวดหมู่หลังบ้าน</h3>
+        <div class="h-64 flex items-center justify-center"><canvas id="chart-category"></canvas></div>
+      </div>
+      <div class="bg-slate-950 border border-slate-800 rounded-3xl p-5">
+        <h3 class="font-bold text-base mb-3">ยอดรับซื้อเข้า vs ขายออกโรงงาน (7 วันล่าสุด)</h3>
+        <div class="h-64"><canvas id="chart-cashflow"></canvas></div>
+      </div>
+    </div>
+
+    <div class="bg-slate-950 border border-slate-800 rounded-3xl p-5">
+      <h3 class="font-bold text-lg mb-1">จัดการสินค้า แก้ไขชื่อ เกรดย่อย และเพดานราคา</h3>
+      <p class="text-xs text-slate-400 mb-3">ช่องเกรดย่อยใส่รูปแบบเช่น: <code class="text-amber-300">ปอกสวย:265, เผา:245, ช็อต:230, สาย:85</code> (เว้นว่างได้ถ้าไม่มีเกรดย่อย)</p>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm text-left">
+          <thead class="text-xs text-slate-400 border-b border-slate-800">
+            <tr>
+              <th class="py-2">ชื่อสินค้า (แก้ไขได้)</th>
+              <th>คำย่อ</th>
+              <th>สต็อก (กก.)</th>
+              <th>ทุนเฉลี่ย</th>
+              <th>ราคาหลัก</th>
+              <th>เพดานสูงสุด</th>
+              <th>เกรดย่อย (ชื่อ:ราคา, ...)</th>
+              <th>จัดการ</th>
+            </tr>
+          </thead>
+          <tbody id="owner-stock-table" class="divide-y divide-slate-800/60"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="bg-slate-950 border border-slate-800 rounded-3xl p-5">
+        <h3 class="font-bold text-lg mb-3">จัดการรหัส PIN พนักงาน</h3>
+        <div class="flex gap-2 mb-3">
+          <input id="new-u-name" type="text" placeholder="ชื่อพนักงาน" class="flex-1 bg-slate-800 rounded-xl px-3 py-2 text-sm text-white" />
+          <select id="new-u-role" class="bg-slate-800 rounded-xl px-3 py-2 text-sm text-white">
+            <option value="staff">STAFF (ชั่งอย่างเดียว)</option>
+            <option value="manager">MANAGER (แคชเชียร์/หลงจู๊)</option>
+            <option value="owner">OWNER (เจ้าของ)</option>
+          </select>
+          <input id="new-u-pin" type="text" maxlength="6" placeholder="PIN" class="w-24 bg-slate-800 rounded-xl px-3 py-2 text-sm text-white" />
+          <button onclick="addStaffPin()" class="bg-emerald-600 px-4 py-2 rounded-xl text-sm font-bold">เพิ่ม</button>
+        </div>
+        <div id="owner-users-list" class="space-y-2"></div>
+      </div>
+
+      <div class="bg-slate-950 border border-slate-800 rounded-3xl p-5">
+        <h3 class="font-bold text-lg text-red-400 mb-3">ประวัติบิลที่ถูกยกเลิก (Audit Log)</h3>
+        <div id="owner-void-log" class="space-y-2 max-h-60 overflow-y-auto"></div>
+      </div>
+    </div>
+  </main>
+
+  <div id="numpad-modal" class="hidden fixed inset-0 z-40 bg-black/75 flex items-center justify-center p-3">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-md p-4 shadow-2xl">
+      <div class="flex justify-between items-center mb-2">
+        <h3 id="np-item-name" class="text-xl font-bold text-white">ชื่อสินค้า</h3>
+        <button onclick="closeNumpad()" class="text-slate-400 hover:text-white text-2xl px-2">✕</button>
+      </div>
+
+      <div class="mb-3">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-xs text-amber-300 font-semibold">เลือกรายการย่อย / สภาพของ:</span>
+          <button id="btn-quick-variant" onclick="quickAddVariantFromNumpad()" class="text-[11px] bg-slate-800 hover:bg-slate-700 text-sky-400 px-2 py-0.5 rounded-lg">+ เพิ่มเกรดย่อย</button>
+        </div>
+        <div id="np-variants-bar" class="flex flex-wrap gap-1.5"></div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2 mb-2.5">
+        <div onclick="setNpTarget('weight')" id="box-np-weight" class="cursor-pointer rounded-2xl p-2.5 border-2 border-emerald-500 bg-slate-950">
+          <div class="text-xs text-slate-400">น้ำหนักชั่ง (กก.)</div>
+          <div id="val-np-weight" class="text-2xl font-bold text-emerald-400">0</div>
+        </div>
+        <div onclick="setNpTarget('tare')" id="box-np-tare" class="cursor-pointer rounded-2xl p-2.5 border-2 border-slate-800 bg-slate-950">
+          <div class="text-xs text-slate-400">หักเข่ง (กก.)</div>
+          <div id="val-np-tare" class="text-2xl font-bold text-amber-400">0</div>
+        </div>
+        <div onclick="setNpTarget('price')" id="box-np-price" class="cursor-pointer rounded-2xl p-2.5 border-2 border-slate-800 bg-slate-950">
+          <div class="text-xs text-slate-400">ราคา/กก. <span id="np-max-hint" class="text-[10px] text-slate-500"></span></div>
+          <div id="val-np-price" class="text-2xl font-bold text-sky-400">0</div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between mb-2.5 text-xs bg-slate-950/80 px-3 py-2 rounded-xl border border-slate-800">
+        <div class="flex gap-1.5 items-center">
+          <span class="text-slate-400">หักเข่ง:</span>
+          <button onclick="quickTare(0)" class="bg-slate-800 px-2 py-1 rounded">0</button>
+          <button onclick="quickTare(1)" class="bg-slate-800 px-2 py-1 rounded">-1</button>
+          <button onclick="quickTare(2)" class="bg-slate-800 px-2 py-1 rounded">-2</button>
+          <button onclick="quickTare(3)" class="bg-slate-800 px-2 py-1 rounded">-3</button>
+        </div>
+        <label class="flex items-center gap-1.5 text-emerald-300 font-medium cursor-pointer">
+          <input id="np-auto-save-price" type="checkbox" checked class="w-4 h-4 accent-emerald-500" />
+          จำราคานี้ต่อ
+        </label>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2 mb-3">
+        <button onclick="npPress('7')" class="active-press bg-slate-800 text-2xl font-bold py-3 rounded-2xl">7</button>
+        <button onclick="npPress('8')" class="active-press bg-slate-800 text-2xl font-bold py-3 rounded-2xl">8</button>
+        <button onclick="npPress('9')" class="active-press bg-slate-800 text-2xl font-bold py-3 rounded-2xl">9</button>
+        <button onclick="npPress('4')" class="active-press bg-slate-800 text-2xl font-bold py-3 rounded-2xl">4</button>
+        <button onclick="npPress('5')" class="active-press bg-slate-800 text-2xl font-bold py-3 rounded-2xl">5</button>
+        <button onclick="npPress('6')" class="active-press bg-slate-800 text-2xl font-bold py-3 rounded-2xl">6</button>
+        <button onclick="npPress('1')" class="active-press bg-slate-800 text-2xl font-bold py-3 rounded-2xl">1</button>
+        <button onclick="npPress('2')" class="active-press bg-slate-800 text-2xl font-bold py-3 rounded-2xl">2</button>
+        <button onclick="npPress('3')" class="active-press bg-slate-800 text-2xl font-bold py-3 rounded-2xl">3</button>
+        <button onclick="npPress('.')" class="active-press bg-slate-800 text-2xl font-bold py-3 rounded-2xl">.</button>
+        <button onclick="npPress('0')" class="active-press bg-slate-800 text-2xl font-bold py-3 rounded-2xl">0</button>
+        <button onclick="npBackspace()" class="active-press bg-red-900/40 text-red-300 text-lg font-bold py-3 rounded-2xl">⌫ ลบ</button>
+      </div>
+      <button onclick="confirmNumpadItem()" class="active-press w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xl font-bold py-3.5 rounded-2xl">+ ตกลง (<span id="np-preview-sub">0</span> ฿)</button>
+    </div>
+  </div>
+
+  <div id="checkout-modal" class="hidden fixed inset-0 z-40 bg-black/75 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-md p-6 shadow-2xl">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-xl font-bold">เลือกแหล่งจ่ายเงิน</h3>
+        <button onclick="closeCheckoutModal()" class="text-slate-400 text-2xl">✕</button>
+      </div>
+      <div class="bg-slate-950 rounded-2xl p-4 mb-4 text-center border border-slate-800">
+        <div class="text-xs text-slate-400">ยอดจ่ายลูกค้าสุทธิ</div>
+        <div id="co-total" class="text-4xl font-extrabold text-emerald-400">0 ฿</div>
+      </div>
+      <div class="space-y-3 mb-4">
+        <div>
+          <label class="text-xs text-slate-400">1. จ่ายจากเงินสดลิ้นชัก (บาท)</label>
+          <input id="pay-drawer" oninput="syncSplitPay('drawer')" type="number" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-xl font-bold text-emerald-400" />
+        </div>
+        <div>
+          <label class="text-xs text-amber-400">2. จ่ายจากตู้เซฟ / เงินก้อนใหญ่ (บาท)</label>
+          <input id="pay-safe" oninput="syncSplitPay('safe')" type="number" value="0" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-xl font-bold text-amber-400" />
+        </div>
+        <div>
+          <label class="text-xs text-sky-400">3. โอนเงินธนาคาร (บาท)</label>
+          <input id="pay-bank" type="number" value="0" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-xl font-bold text-sky-400" />
+        </div>
+        <input id="co-customer" type="text" placeholder="ชื่อลูกค้า / ทะเบียนรถ (ถ้ามี)" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white" />
+      </div>
+      <button id="btn-confirm-pay" onclick="submitBuyTransaction()" class="active-press w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xl font-bold py-4 rounded-2xl">✅ ยืนยันบันทึกบิล</button>
+    </div>
+  </div>
+
+  <div id="add-item-modal" class="hidden fixed inset-0 z-40 bg-black/75 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-md p-6 shadow-2xl">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-xl font-bold">+ เพิ่มรายการของเก่าใหม่</h3>
+        <button onclick="document.getElementById('add-item-modal').classList.add('hidden')" class="text-slate-400 text-2xl">✕</button>
+      </div>
+      <div class="space-y-3 mb-5">
+        <input id="new-item-name" type="text" placeholder="ชื่อสินค้าหลัก เช่น ทองเหลือง" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white" />
+        <select id="new-item-cat" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white"></select>
+        <div class="grid grid-cols-2 gap-2">
+          <input id="new-item-price" type="number" step="0.01" placeholder="ราคาตั้งต้น (บาท/กก.)" class="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white" />
+          <input id="new-item-max" type="number" step="0.01" placeholder="เพดานสูงสุด (บาท)" class="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white" />
+        </div>
+        <input id="new-item-variants" type="text" placeholder="เกรดย่อย (ไม่บังคับ) เช่น หนา:160, บาง:140, ขี้กลึง:110" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white" />
+        <input id="new-item-code" type="text" maxlength="6" placeholder="คำค้นย่อ เช่น ทล (ไม่บังคับ)" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white" />
+      </div>
+      <button onclick="saveNewItem()" class="active-press w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3.5 rounded-2xl">บันทึกและสร้างการ์ดภาพอัตโนมัติ</button>
+    </div>
+  </div>
+
+  <script type="module" src="./pos-app.js"></script>
+</body>
+</html>
