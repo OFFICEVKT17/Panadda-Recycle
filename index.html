@@ -10,11 +10,23 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    body { font-family: 'Prompt', sans-serif; touch-action: manipulation; user-select: none; color-scheme: dark; }
+    body {
+      font-family: 'Prompt', sans-serif;
+      touch-action: manipulation;
+      user-select: none;
+      color-scheme: dark;
+      height: 100vh;
+      height: 100dvh;
+    }
     .active-press:active { transform: scale(0.96); }
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     .item-card svg { width: 2rem; height: 2rem; }
+
+    #items-carousel {
+      touch-action: pan-x;
+      -webkit-overflow-scrolling: touch;
+    }
 
     @keyframes popIn {
       from { opacity: 0; transform: scale(0.94) translateY(6px); }
@@ -28,8 +40,24 @@
     .anim-toast { animation: slideInRight 0.2s ease-out forwards; }
 
     @media (max-width: 767px) {
-      .pos-layout { flex-direction: column; position: relative; }
-      .pos-catalog { width: 100% !important; border-right: none !important; padding-bottom: 4.75rem !important; }
+      .pos-layout {
+        flex-direction: column;
+        position: relative;
+        height: 100%;
+        min-height: 0;
+      }
+      .pos-catalog {
+        width: 100% !important;
+        flex: 1 1 0% !important;
+        height: 100% !important;
+        min-height: 0 !important;
+        border-right: none !important;
+        padding-bottom: 4.75rem !important;
+      }
+      #items-carousel {
+        flex: 1 1 0% !important;
+        min-height: 240px !important;
+      }
       .pos-cart {
         position: fixed; inset: 0; width: 100% !important; z-index: 45;
         transform: translateY(100%); transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -37,7 +65,7 @@
       .pos-cart.mobile-open { transform: translateY(0); }
       .mobile-only-bar { display: flex !important; }
       .mobile-close-cart { display: inline-flex !important; }
-      .top-header { flex-wrap: wrap; gap: 0.5rem; padding: 0.5rem 0.75rem !important; }
+      .top-header { flex-wrap: wrap; gap: 0.4rem; padding: 0.5rem 0.75rem !important; }
       .top-nav { order: 3; width: 100%; overflow-x: auto; padding-bottom: 2px; }
       .modal-sheet { max-width: 100% !important; border-radius: 1.5rem !important; padding: 1rem !important; }
     }
@@ -57,7 +85,7 @@
     }
   </style>
 </head>
-<body class="bg-slate-900 text-slate-100 h-[100dvh] overflow-hidden flex flex-col">
+<body class="bg-slate-900 text-slate-100 h-screen overflow-hidden flex flex-col">
 
   <div id="busy-overlay" class="hidden fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-700 rounded-3xl px-8 py-6 shadow-2xl flex flex-col items-center gap-3.5">
@@ -111,7 +139,7 @@
       <span class="text-lg font-bold text-emerald-400 whitespace-nowrap">♻️ Panadda</span>
     </div>
 
-    <nav class="top-nav flex gap-1.5 mx-2">
+    <nav class="top-nav no-scrollbar flex gap-1.5 mx-2">
       <button id="nav-pos" data-tab="pos" onclick="switchTab('pos')" class="tab-btn px-3.5 py-2 rounded-xl font-semibold text-xs sm:text-sm bg-emerald-600 text-white whitespace-nowrap">ชั่งรับซื้อ (POS)</button>
       <button id="nav-drawer" data-tab="drawer" onclick="switchTab('drawer')" class="tab-btn hidden px-3.5 py-2 rounded-xl font-semibold text-xs sm:text-sm bg-slate-800 text-slate-300 whitespace-nowrap">ลิ้นชัก & ประวัติบิล</button>
       <button id="nav-sell" data-tab="sell" onclick="switchTab('sell')" class="tab-btn hidden px-3.5 py-2 rounded-xl font-semibold text-xs sm:text-sm bg-slate-800 text-slate-300 whitespace-nowrap">ส่งขายโรงงาน 🚚 <span id="transit-badge" class="hidden ml-1 bg-amber-500 text-slate-950 text-xs font-extrabold px-1.5 rounded-full">0</span></button>

@@ -151,7 +151,7 @@ window.switchTab = (tab) => {
   });
 
   applyRolePermissions();
-  if (tab === 'pos') setTimeout(() => window.renderItemGrid(), 20);
+  if (tab === 'pos') setTimeout(() => window.renderItemGrid(), 30);
   if (tab === 'drawer') withBusy('กำลังโหลดข้อมูลบิล...', window.loadDrawerView);
   if (tab === 'sell') withBusy('กำลังโหลดข้อมูลส่งขาย...', window.loadSellView);
   if (tab === 'owner') withBusy('กำลังโหลดข้อมูลสรุปร้าน...', window.loadOwnerView);
@@ -168,7 +168,7 @@ function getPosGridMetrics(carouselEl) {
 
   if (w < 768) {
     cols = 2;
-    cardHeight = 112;
+    cardHeight = 108;
   } else if (w < 1200) {
     cols = 3;
     cardHeight = 120;
@@ -181,10 +181,9 @@ function getPosGridMetrics(carouselEl) {
   }
 
   const gap = 10;
-  const availH = carouselEl?.clientHeight || 0;
-  const rows = availH > 150
-    ? Math.max(2, Math.floor((availH + gap) / (cardHeight + gap)))
-    : (w < 768 ? 3 : 4);
+  const fallbackH = Math.max(240, window.innerHeight - (w < 768 ? 250 : 175));
+  const availH = (carouselEl && carouselEl.clientHeight > 120) ? carouselEl.clientHeight : fallbackH;
+  const rows = Math.max(2, Math.floor((availH + gap) / (cardHeight + gap)));
 
   return { cols, rows, perPage: cols * rows, cardHeight };
 }
@@ -297,7 +296,7 @@ function renderPosPagerControls() {
   if (!dotsEl) return;
 
   if (prevBtn) prevBtn.disabled = posCurrentPage <= 0;
-  if (nextBtn) nextBtn.disabled = posCurrentPage >= posTotalPages - 1;
+  if (nextBtn) nextBtn.disabled = posTotalPages <= 1 || posCurrentPage >= posTotalPages - 1;
 
   dotsEl.innerHTML = Array.from({ length: posTotalPages }, (_, i) => {
     const active = i === posCurrentPage;
