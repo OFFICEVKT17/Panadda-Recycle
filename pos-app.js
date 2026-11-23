@@ -26,6 +26,10 @@ export const state = {
 };
 
 let pinBuffer = '';
+let posCurrentPage = 0;
+let posTotalPages = 1;
+let resizeTimer = null;
+let wheelLock = false;
 let npState = { editIndex: null, item: null, selectedVariant: null, target: 'weight', weight: '', tare: '0', price: '0', firstTouchPrice: true };
 
 function resetPosDateToToday() {
@@ -147,6 +151,7 @@ window.switchTab = (tab) => {
   });
 
   applyRolePermissions();
+  if (tab === 'pos') setTimeout(() => window.renderItemGrid(), 20);
   if (tab === 'drawer') withBusy('กำลังโหลดข้อมูลบิล...', window.loadDrawerView);
   if (tab === 'sell') withBusy('กำลังโหลดข้อมูลส่งขาย...', window.loadSellView);
   if (tab === 'owner') withBusy('กำลังโหลดข้อมูลสรุปร้าน...', window.loadOwnerView);
@@ -156,48 +161,177 @@ window.toggleMobileCart = (open) => {
   document.getElementById('pos-cart-panel')?.classList.toggle('mobile-open', open);
 };
 
+function getPosGridMetrics(carouselEl) {
+  const w = window.innerWidth;
+  let cols = 4;
+  let cardHeight = 124;
+
+  if (w < 768) {
+    cols = 2;
+    cardHeight = 112;
+  } else if (w < 1200) {
+    cols = 3;
+    cardHeight = 120;
+  } else if (w < 1536) {
+    cols = 4;
+    cardHeight = 124;
+  } else {
+    cols = 5;
+    cardHeight = 124;
+  }
+
+  const gap = 10;
+  const availH = carouselEl?.clientHeight || 0;
+  const rows = availH > 150
+    ? Math.max(2, Math.floor((availH + gap) / (cardHeight + gap)))
+    : (w < 768 ? 3 : 4);
+
+  return { cols, rows, perPage: cols * rows, cardHeight };
+}
+
+window.onSearchPosItems = () => {
+  posCurrentPage = 0;
+  window.renderItemGrid();
+};
+
 window.renderItemGrid = () => {
   const q = (document.getElementById('search-input')?.value || '').trim().toLowerCase();
-  const grid = document.getElementById('items-grid');
-  if (!grid) return;
+  const carousel = document.getElementById('items-carousel');
+  if (!carousel) return;
+
+  const { cols, perPage, cardHeight } = getPosGridMetrics(carousel);
 
   const filtered = state.items.filter(it =>
     !q || it.name.toLowerCase().includes(q) || (it.short_code && it.short_code.toLowerCase().includes(q))
   );
 
-  const cardsHtml = filtered.map(it => {
+  const cardElements = filtered.map(it => {
     const color = it.categories?.color_hex || '#475569';
     const vis = generateItemVisual(it.name, color, it.short_code);
     const variants = Array.isArray(it.sub_variants) ? it.sub_variants : [];
-    const subTags = variants.length ? `<div class="text-[11px] text-slate-400 truncate mt-0.5">${variants.map(v => v.name).join(' • ')}</div>` : '';
+    const subTags = variants.length ? `<div class="text-[10px] text-slate-400 truncate mt-0.5">${variants.map(v => v.name).join(' • ')}</div>` : '';
     const displayPrice = variants.length ? `${fmtMoney(variants[0].price)} ฿` : `${fmtMoney(it.default_buy_price)} ฿`;
 
     return `
       <button onclick="openItemNumpad('${it.id}')" 
-        style="border-color: ${vis.color}66;"
-        class="item-card active-press bg-slate-800/90 hover:bg-slate-800 border-2 rounded-3xl p-3 flex flex-col justify-between text-left shadow-md h-44 relative overflow-hidden">
+        style="border-color: ${vis.color}66; height: ${cardHeight}px;"
+        class="item-card active-press bg-slate-800/90 hover:bg-slate-800 border-2 rounded-2xl p-2.5 flex flex-col justify-between text-left shadow-md relative overflow-hidden">
         <div class="flex justify-between items-start w-full z-10">
-          <span style="background:${vis.color}33; color:${vis.color}" class="px-2.5 py-0.5 rounded-lg text-xs font-extrabold">${vis.badge}</span>
-          <span class="bg-slate-950/90 text-emerald-400 font-extrabold px-2.5 py-1 rounded-xl text-sm border border-slate-700">${displayPrice}</span>
+          <span style="background:${vis.color}33; color:${vis.color}" class="px-2 py-0.5 rounded-md text-[11px] font-extrabold leading-tight">${vis.badge}</span>
+          <span class="bg-slate-950/90 text-emerald-400 font-extrabold px-2 py-0.5 rounded-lg text-xs border border-slate-700 leading-tight">${displayPrice}</span>
         </div>
         <div style="color: ${vis.color}" class="my-auto mx-auto opacity-90">${vis.iconSvg}</div>
         <div class="z-10 w-full">
-          <div class="font-bold text-base text-white leading-tight truncate">${it.name}</div>
+          <div class="font-bold text-xs sm:text-sm text-white leading-tight truncate">${it.name}</div>
           ${subTags}
         </div>
       </button>
     `;
-  }).join('');
+  });
 
-  const addCardHtml = state.currentUser?.role === 'owner' ? `
-    <button onclick="openItemEditor()" class="item-card active-press bg-slate-900/60 hover:bg-slate-800/80 border-2 border-dashed border-amber-500/50 rounded-3xl p-3 flex flex-col items-center justify-center text-amber-400 h-44 gap-2">
-      <span class="text-4xl font-bold">＋</span>
-      <span class="font-bold text-sm">เพิ่มสินค้าประจำร้าน</span>
-    </button>
-  ` : '';
+  if (state.currentUser?.role === 'owner' && !q) {
+    cardElements.push(`
+      <button onclick="openItemEditor()" style="height: ${cardHeight}px;"
+        class="item-card active-press bg-slate-900/60 hover:bg-slate-800/80 border-2 border-dashed border-amber-500/50 rounded-2xl p-2.5 flex flex-col items-center justify-center text-amber-400 gap-1">
+        <span class="text-2xl font-bold leading-none">＋</span>
+        <span class="font-bold text-xs">เพิ่มสินค้าประจำร้าน</span>
+      </button>
+    `);
+  }
 
-  grid.innerHTML = cardsHtml + addCardHtml;
+  if (!cardElements.length) {
+    posTotalPages = 1;
+    posCurrentPage = 0;
+    carousel.innerHTML = `<div class="w-full h-full flex items-center justify-center text-slate-500 text-sm">ไม่พบสินค้าที่ค้นหา</div>`;
+    renderPosPagerControls();
+    return;
+  }
+
+  const pages = [];
+  for (let i = 0; i < cardElements.length; i += perPage) {
+    pages.push(cardElements.slice(i, i + perPage));
+  }
+
+  posTotalPages = pages.length;
+  if (posCurrentPage >= posTotalPages) posCurrentPage = posTotalPages - 1;
+
+  carousel.innerHTML = pages.map(chunk => `
+    <div class="w-full min-w-full h-full shrink-0 snap-start snap-always grid gap-2.5 content-start pr-0.5"
+         style="grid-template-columns: repeat(${cols}, minmax(0, 1fr));">
+      ${chunk.join('')}
+    </div>
+  `).join('');
+
+  requestAnimationFrame(() => {
+    carousel.scrollTo({ left: posCurrentPage * carousel.clientWidth, behavior: 'instant' });
+    renderPosPagerControls();
+  });
 };
+
+window.goToPosPage = (idx) => {
+  const carousel = document.getElementById('items-carousel');
+  if (!carousel) return;
+  posCurrentPage = Math.max(0, Math.min(posTotalPages - 1, idx));
+  carousel.scrollTo({ left: posCurrentPage * carousel.clientWidth, behavior: 'smooth' });
+  renderPosPagerControls();
+};
+
+window.stepPosPage = (delta) => {
+  window.goToPosPage(posCurrentPage + delta);
+};
+
+window.syncPosPageIndicator = () => {
+  const carousel = document.getElementById('items-carousel');
+  if (!carousel || !carousel.clientWidth) return;
+  const idx = Math.round(carousel.scrollLeft / carousel.clientWidth);
+  if (idx !== posCurrentPage) {
+    posCurrentPage = Math.max(0, Math.min(posTotalPages - 1, idx));
+    renderPosPagerControls();
+  }
+};
+
+function renderPosPagerControls() {
+  const dotsEl = document.getElementById('pos-page-dots');
+  const prevBtn = document.getElementById('btn-pos-prev');
+  const nextBtn = document.getElementById('btn-pos-next');
+  if (!dotsEl) return;
+
+  if (prevBtn) prevBtn.disabled = posCurrentPage <= 0;
+  if (nextBtn) nextBtn.disabled = posCurrentPage >= posTotalPages - 1;
+
+  dotsEl.innerHTML = Array.from({ length: posTotalPages }, (_, i) => {
+    const active = i === posCurrentPage;
+    return `
+      <button onclick="goToPosPage(${i})"
+        class="h-7 min-w-[1.75rem] px-2 rounded-lg text-xs font-extrabold transition ${active ? 'bg-emerald-600 text-white shadow' : 'bg-slate-800/80 text-slate-400 hover:text-white'}">
+        ${i + 1}
+      </button>
+    `;
+  }).join('');
+}
+
+function attachPosCarouselGestures() {
+  const carousel = document.getElementById('items-carousel');
+  if (!carousel) return;
+
+  carousel.addEventListener('wheel', (e) => {
+    if (posTotalPages <= 1) return;
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      e.preventDefault();
+      if (wheelLock) return;
+      wheelLock = true;
+      window.stepPosPage(e.deltaY > 0 ? 1 : -1);
+      setTimeout(() => { wheelLock = false; }, 260);
+    }
+  }, { passive: false });
+
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (state.activeTab === 'pos') window.renderItemGrid();
+    }, 150);
+  });
+}
 
 window.openItemNumpad = (itemId, editIdx = null) => {
   const posDateVal = document.getElementById('pos-tx-date')?.value;
@@ -571,6 +705,7 @@ window.submitBuyTransaction = () => {
 };
 
 resetPosDateToToday();
+attachPosCarouselGestures();
 initBackoffice({ state, loadInitialData, renderCart });
 
 (async function restoreSession() {

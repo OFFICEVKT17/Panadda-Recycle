@@ -12,6 +12,10 @@
   <style>
     body { font-family: 'Prompt', sans-serif; touch-action: manipulation; user-select: none; color-scheme: dark; }
     .active-press:active { transform: scale(0.96); }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .item-card svg { width: 2rem; height: 2rem; }
+
     @keyframes popIn {
       from { opacity: 0; transform: scale(0.94) translateY(6px); }
       to { opacity: 1; transform: scale(1) translateY(0); }
@@ -25,9 +29,7 @@
 
     @media (max-width: 767px) {
       .pos-layout { flex-direction: column; position: relative; }
-      .pos-catalog { width: 100% !important; border-right: none !important; padding-bottom: 5.5rem !important; }
-      .pos-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 0.65rem !important; }
-      .item-card { height: 9.5rem !important; padding: 0.65rem !important; }
+      .pos-catalog { width: 100% !important; border-right: none !important; padding-bottom: 4.75rem !important; }
       .pos-cart {
         position: fixed; inset: 0; width: 100% !important; z-index: 45;
         transform: translateY(100%); transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -44,8 +46,6 @@
       .pos-layout { flex-direction: row; }
       .pos-catalog { width: 58% !important; }
       .pos-cart { width: 42% !important; transform: none !important; position: static; }
-      .pos-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 0.75rem !important; }
-      .item-card { height: 10.75rem !important; }
       .mobile-only-bar, .mobile-close-cart { display: none !important; }
     }
 
@@ -53,13 +53,7 @@
       .pos-layout { flex-direction: row; }
       .pos-catalog { width: 68% !important; }
       .pos-cart { width: 32% !important; transform: none !important; position: static; }
-      .pos-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 0.85rem !important; }
-      .item-card { height: 11.25rem !important; }
       .mobile-only-bar, .mobile-close-cart { display: none !important; }
-    }
-
-    @media (min-width: 1536px) {
-      .pos-grid { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
     }
   </style>
 </head>
@@ -136,19 +130,30 @@
     </div>
   </header>
 
-  <main id="view-pos" class="pos-layout flex-1 flex overflow-hidden">
-    <section class="pos-catalog flex flex-col p-3 border-r border-slate-800 overflow-hidden flex-1">
-      <div class="flex gap-2 mb-3 shrink-0">
-        <input id="search-input" oninput="renderItemGrid()" type="text" placeholder="🔍 ค้นหาด่วน เช่น ทด, หล, ขวด..." class="flex-1 min-w-0 bg-slate-800 border border-slate-700 rounded-2xl px-3.5 py-2.5 sm:py-3 text-sm sm:text-base text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500" />
-        <button onclick="openCustomItemModal()" class="active-press bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-2xl text-xs sm:text-sm shrink-0 whitespace-nowrap">+ เหมา/อื่นๆ</button>
+  <main id="view-pos" class="pos-layout flex-1 flex overflow-hidden min-h-0">
+    <section class="pos-catalog flex flex-col p-3 border-r border-slate-800 overflow-hidden flex-1 min-h-0">
+      <div class="flex gap-2 mb-2.5 shrink-0">
+        <input id="search-input" oninput="onSearchPosItems()" type="text" placeholder="🔍 ค้นหาด่วน เช่น ทด, หล, ขวด..." class="flex-1 min-w-0 bg-slate-800 border border-slate-700 rounded-2xl px-3.5 py-2 sm:py-2.5 text-sm sm:text-base text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500" />
+        <button onclick="openCustomItemModal()" class="active-press bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-2xl text-xs sm:text-sm shrink-0 whitespace-nowrap">+ เหมา/อื่นๆ</button>
       </div>
-      <div id="items-grid" class="pos-grid grid gap-3 overflow-y-auto pr-1 pb-6"></div>
+
+      <div id="items-carousel" onscroll="syncPosPageIndicator()" class="no-scrollbar flex-1 min-h-0 flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory scroll-smooth"></div>
+
+      <div id="pos-pager-bar" class="shrink-0 pt-2 mt-1.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
+        <button id="btn-pos-prev" onclick="stepPosPage(-1)" class="active-press bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-200 font-bold px-3.5 py-1.5 rounded-xl text-xs">
+          ◀ หน้าก่อน
+        </button>
+        <div id="pos-page-dots" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar"></div>
+        <button id="btn-pos-next" onclick="stepPosPage(1)" class="active-press bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-200 font-bold px-3.5 py-1.5 rounded-xl text-xs">
+          หน้าถัดไป ▶
+        </button>
+      </div>
     </section>
 
-    <div onclick="toggleMobileCart(true)" class="mobile-only-bar hidden fixed bottom-0 inset-x-0 z-30 bg-slate-950/95 border-t border-slate-800 px-4 py-3 items-center justify-between backdrop-blur-md">
+    <div onclick="toggleMobileCart(true)" class="mobile-only-bar hidden fixed bottom-0 inset-x-0 z-30 bg-slate-950/95 border-t border-slate-800 px-4 py-2.5 items-center justify-between backdrop-blur-md">
       <div>
         <div class="text-xs text-slate-400">ในตะกร้า <strong id="m-cart-count" class="text-amber-400">0</strong> เข่ง (<span id="m-cart-kg">0</span> กก.)</div>
-        <div class="text-xl font-extrabold text-emerald-400"><span id="m-cart-amt">0</span> ฿</div>
+        <div class="text-lg font-extrabold text-emerald-400"><span id="m-cart-amt">0</span> ฿</div>
       </div>
       <button class="active-press bg-emerald-600 text-white font-bold px-5 py-2.5 rounded-2xl text-sm shadow-lg">
         🛒 ดูตะกร้า / จ่ายเงิน
