@@ -15,6 +15,12 @@ const filters = {
   owner:  { mode: 'month', date: '', month: '', year: '' }
 };
 
+const paging = {
+  drawerBills: { limit: 50, page: 1, rows: [] },
+  sellDone:    { limit: 50, page: 1, rows: [] },
+  ownerVoids:  { limit: 50, page: 1, rows: [] }
+};
+
 function initDefaultFilters() {
   const today = getTodayStr();
   const ym = today.slice(0, 7);
@@ -88,8 +94,169 @@ function renderFilterControl(scope, containerId) {
   `;
 }
 
+function paginateRows(key) {
+  const st = paging[key];
+  const total = st.rows.length;
+  if (!total) return { slice: [], barHtml: '' };
+
+  const isAll = st.limit === 'ALL';
+  const size = isAll ? total : Number(st.limit);
+  const totalPages = Math.max(1, Math.ceil(total / size));
+  if (st.page > totalPages) st.page = totalPages;
+  if (st.page < 1) st.page = 1;
+
+  const startIdx = isAll ? 0 : (st.page - 1) * size;
+  const endIdx = isAll ? total : Math.min(total, startIdx + size);
+  const slice = st.rows.slice(startIdx, endIdx);
+
+  const lBtn = (val, label) => {
+    const active = String(st.limit) === String(val);
+    return `<button onclick="setPageLimit('${key}', '${val}')" class="px-2.5 py-1 rounded-lg text-xs font-bold transition ${active ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'}">${label}</button>`;
+  };
+
+  const navHtml = !isAll && totalPages > 1 ? `
+    <div class="flex items-center gap-1.5">
+      <button onclick="setPageNum('${key}', ${st.page - 1})" ${st.page <= 1 ? 'disabled' : ''} class="px-2.5 py-1 rounded-lg bg-slate-800 text-xs font-bold disabled:opacity-30">◀ ก่อนหน้า</button>
+      <span class="text-xs text-slate-300 font-semibold px-1">หน้า ${st.page}/${totalPages}</span>
+      <button onclick="setPageNum('${key}', ${st.page + 1})" ${st.page >= totalPages ? 'disabled' : ''} class="px-2.5 py-1 rounded-lg bg-slate-800 text-xs font-bold disabled:opacity-30">ถัดไป ▶</button>
+    </div>
+  ` : '';
+
+  const barHtml = `
+    <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-900/70 border border-slate-800/80 rounded-2xl px-3.5 py-2 mb-2.5">
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-slate-400">แสดงผล:</span>
+        <div class="inline-flex bg-slate-950 border border-slate-800 rounded-xl p-0.5">
+          ${lBtn(50, '50')}
+          ${lBtn(100, '100')}
+          ${lBtn('ALL', 'ทั้งหมด')}
+        </div>
+        <span class="text-xs text-slate-400">(${startIdx + 1}–${endIdx} จาก ${total} รายการ)</span>
+      </div>
+      ${navHtml}
+    </div>
+  `;
+
+  return { slice, barHtml };
+}
+
+function renderDrawerBillsPage() {
+  const bList = document.getElementById('today-bills-list');
+  if (!bList) return;
+  const range = getPeriodRange(filters.drawer);
+
+  if (!paging.drawerBills.rows.length) {
+    bList.innerHTML = `<div class="text-slate-500 text-sm py-8 text-center">ไม่พบบิลรับซื้อในช่วง ${range.label}</div>`;
+    return;
+  }
+
+  const { slice, barHtml } = paginateRows('drawerBills');
+  const itemsHtml = slice.map(b => {
+    const isVoid = b.status === 'VOIDED';
+    const dtStr = new Date(b.created_at).toLocaleString('th-TH', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const summary = (b.transaction_items || []).map(ti => {
+      const label = ti.items?.name ? (ti.variant_name ? `${ti.items.name}-${ti.variant_name}` : ti.items.name) : ti.custom_item_name;
+      return `${label} (${ti.net_weight_kg} กก.)`;
+    }).join(', ');
+    return `
+      <div class="bg-slate-900 border ${isVoid ? 'border-red-900/60 opacity-60' : 'border-slate-800'} rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div class="font-bold text-white flex flex-wrap items-center gap-2">
+            <span>${b.bill_no}</span>
+            <span class="text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded">${dtStr}</span>
+            ${b.customer_or_factory_name ? `<span class="text-xs text-sky-400">(${b.customer_or_factory_name})</span>` : ''}
+            ${isVoid ? `<span class="bg-red-600 text-white text-[10px] px-2 py-0.5 rounded">ยกเลิกแล้ว: ${b.void_reason}</span>` : ''}
+          </div>
+          <div class="text-xs text-slate-400 mt-1">${summary}</div>
+        </div>
+        <div class="flex items-center gap-3 ml-auto">
+          <span class="text-lg font-extrabold ${isVoid ? 'line-through text-slate-500' : 'text-emerald-400'}">${fmtMoney(b.total_amount)} ฿</span>
+          ${!isVoid ? `
+            <button onclick='editBillToPos(${JSON.stringify(b.id)}, ${JSON.stringify(b.created_at)})' class="active-press bg-amber-600/20 text-amber-300 px-3 py-1.5 rounded-xl text-xs font-bold">แก้ไข</button>
+            <button onclick="voidBill('${b.id}', '${b.bill_no}')" class="active-press bg-red-600/20 text-red-400 px-3 py-1.5 rounded-xl text-xs font-bold">ยกเลิก</button>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  bList.innerHTML = barHtml + `<div class="space-y-2">${itemsHtml}</div>`;
+}
+
+function renderSellDonePage() {
+  const container = document.getElementById('completed-sell-list');
+  if (!container) return;
+  const range = getPeriodRange(filters.sell);
+
+  if (!paging.sellDone.rows.length) {
+    container.innerHTML = `<div class="text-slate-500 text-sm text-center py-6">ไม่มีประวัติการขายในช่วง ${range.label}</div>`;
+    return;
+  }
+
+  const { slice, barHtml } = paginateRows('sellDone');
+  const rowsHtml = slice.map(d => {
+    const ti = d.transaction_items?.[0];
+    const yieldKg = ti?.sell_bundled_piles?.[0]?.estimated_yield_kg;
+    const dtStr = new Date(d.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' });
+    return `
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3 flex flex-wrap justify-between items-center gap-2 text-sm">
+        <div>
+          <div class="font-bold flex items-center gap-2">
+            <span>${d.bill_no} (${d.customer_or_factory_name || '-'}) — ${ti?.items?.name}</span>
+            <span class="text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded">${dtStr}</span>
+          </div>
+          <div class="text-xs text-slate-400 mt-0.5">ขายจริง ${fmtWeight(d.total_weight_kg)} กก. × ${fmtMoney(ti?.unit_price)} ฿ ${yieldKg > 0 ? `| เนื้อที่ได้จากกองพ่วง: ${fmtWeight(yieldKg)} กก.` : ''}</div>
+        </div>
+        <div class="text-right ml-auto">
+          <div class="font-bold text-emerald-400">รับ ${fmtMoney(d.total_amount)} ฿</div>
+          <div class="text-xs ${d.realized_profit >= 0 ? 'text-sky-400' : 'text-red-400'}">กำไรสุทธิ: ${fmtMoney(d.realized_profit)} ฿</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = barHtml + `<div class="space-y-2">${rowsHtml}</div>`;
+}
+
+function renderOwnerVoidsPage() {
+  const container = document.getElementById('owner-void-log');
+  if (!container) return;
+  const range = getPeriodRange(filters.owner);
+  container.classList.remove('max-h-60');
+
+  if (!paging.ownerVoids.rows.length) {
+    container.innerHTML = `<div class="text-slate-500 text-xs py-4 text-center">ไม่มีบิลถูกยกเลิกในช่วง ${range.label}</div>`;
+    return;
+  }
+
+  const { slice, barHtml } = paginateRows('ownerVoids');
+  const rowsHtml = slice.map(v => `
+    <div class="bg-slate-900 border border-red-900/40 rounded-xl p-2.5 text-xs flex justify-between gap-2">
+      <span><strong>${v.bill_no}</strong> (${fmtMoney(v.total_amount)} ฿) — เหตุผล: ${v.void_reason}</span>
+      <span class="text-slate-400 shrink-0">${new Date(v.voided_at || v.created_at).toLocaleDateString('th-TH')}</span>
+    </div>
+  `).join('');
+
+  container.innerHTML = barHtml + `<div class="space-y-2 max-h-80 overflow-y-auto pr-1">${rowsHtml}</div>`;
+}
+
 export function initBackoffice({ state, loadInitialData, renderCart }) {
   initDefaultFilters();
+
+  window.setPageLimit = (key, val) => {
+    paging[key].limit = val === 'ALL' ? 'ALL' : Number(val);
+    paging[key].page = 1;
+    if (key === 'drawerBills') renderDrawerBillsPage();
+    if (key === 'sellDone') renderSellDonePage();
+    if (key === 'ownerVoids') renderOwnerVoidsPage();
+  };
+
+  window.setPageNum = (key, num) => {
+    paging[key].page = Number(num);
+    if (key === 'drawerBills') renderDrawerBillsPage();
+    if (key === 'sellDone') renderSellDonePage();
+    if (key === 'ownerVoids') renderOwnerVoidsPage();
+  };
 
   window.changeFilterMode = (scope, mode) => {
     filters[scope].mode = mode;
@@ -105,9 +272,9 @@ export function initBackoffice({ state, loadInitialData, renderCart }) {
   };
 
   function refreshByScope(scope) {
-    if (scope === 'drawer') withBusy('กำลังกรองรายการบิล...', window.loadDrawerView);
-    if (scope === 'sell') withBusy('กำลังกรองประวัติขาย...', window.loadSellView);
-    if (scope === 'owner') withBusy('กำลังคำนวณสรุปตามช่วงเวลา...', window.loadOwnerView);
+    if (scope === 'drawer') { paging.drawerBills.page = 1; withBusy('กำลังกรองรายการบิล...', window.loadDrawerView); }
+    if (scope === 'sell')   { paging.sellDone.page = 1;    withBusy('กำลังกรองประวัติขาย...', window.loadSellView); }
+    if (scope === 'owner')  { paging.ownerVoids.page = 1;  withBusy('กำลังคำนวณสรุปตามช่วงเวลา...', window.loadOwnerView); }
   }
 
   window.loadDrawerView = async () => {
@@ -138,48 +305,16 @@ export function initBackoffice({ state, loadInitialData, renderCart }) {
       .gte('created_at', range.startISO)
       .lte('created_at', range.endISO)
       .order('created_at', { ascending: false })
-      .limit(300);
+      .limit(5000);
 
-    const activeBills = (bills || []).filter(b => b.status === 'COMPLETED');
+    paging.drawerBills.rows = bills || [];
+    const activeBills = paging.drawerBills.rows.filter(b => b.status === 'COMPLETED');
     const sumBuy = activeBills.reduce((s, b) => s + Number(b.total_amount), 0);
     const sumKg = activeBills.reduce((s, b) => s + Number(b.total_weight_kg), 0);
     document.getElementById('drawer-filter-summary').textContent =
       `${range.label} • บิลสำเร็จ ${activeBills.length} ใบ • น้ำหนักรวม ${fmtWeight(sumKg)} กก. • ยอดจ่ายรวม ${fmtMoney(sumBuy)} ฿`;
 
-    const bList = document.getElementById('today-bills-list');
-    if (!bills?.length) {
-      bList.innerHTML = `<div class="text-slate-500 text-sm py-8 text-center">ไม่พบบิลรับซื้อในช่วง ${range.label}</div>`;
-      return;
-    }
-
-    bList.innerHTML = bills.map(b => {
-      const isVoid = b.status === 'VOIDED';
-      const dtStr = new Date(b.created_at).toLocaleString('th-TH', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' });
-      const summary = (b.transaction_items || []).map(ti => {
-        const label = ti.items?.name ? (ti.variant_name ? `${ti.items.name}-${ti.variant_name}` : ti.items.name) : ti.custom_item_name;
-        return `${label} (${ti.net_weight_kg} กก.)`;
-      }).join(', ');
-      return `
-        <div class="bg-slate-900 border ${isVoid ? 'border-red-900/60 opacity-60' : 'border-slate-800'} rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <div class="font-bold text-white flex flex-wrap items-center gap-2">
-              <span>${b.bill_no}</span>
-              <span class="text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded">${dtStr}</span>
-              ${b.customer_or_factory_name ? `<span class="text-xs text-sky-400">(${b.customer_or_factory_name})</span>` : ''}
-              ${isVoid ? `<span class="bg-red-600 text-white text-[10px] px-2 py-0.5 rounded">ยกเลิกแล้ว: ${b.void_reason}</span>` : ''}
-            </div>
-            <div class="text-xs text-slate-400 mt-1">${summary}</div>
-          </div>
-          <div class="flex items-center gap-3 ml-auto">
-            <span class="text-lg font-extrabold ${isVoid ? 'line-through text-slate-500' : 'text-emerald-400'}">${fmtMoney(b.total_amount)} ฿</span>
-            ${!isVoid ? `
-              <button onclick='editBillToPos(${JSON.stringify(b.id)}, ${JSON.stringify(b.created_at)})' class="active-press bg-amber-600/20 text-amber-300 px-3 py-1.5 rounded-xl text-xs font-bold">แก้ไข</button>
-              <button onclick="voidBill('${b.id}', '${b.bill_no}')" class="active-press bg-red-600/20 text-red-400 px-3 py-1.5 rounded-xl text-xs font-bold">ยกเลิก</button>
-            ` : ''}
-          </div>
-        </div>
-      `;
-    }).join('');
+    renderDrawerBillsPage();
   };
 
   window.openNewShift = () => {
@@ -312,11 +447,12 @@ export function initBackoffice({ state, loadInitialData, renderCart }) {
 
     const [transitRes, doneRes] = await Promise.all([
       supabase.from('transactions').select('*, transaction_items(*, items(name), sell_bundled_piles(*, items(name)))').eq('tx_type', 'SELL').eq('status', 'IN_TRANSIT').order('created_at', { ascending: false }),
-      supabase.from('transactions').select('*, transaction_items(*, items(name), sell_bundled_piles(*, items(name)))').eq('tx_type', 'SELL').eq('status', 'COMPLETED').gte('created_at', range.startISO).lte('created_at', range.endISO).order('created_at', { ascending: false }).limit(200)
+      supabase.from('transactions').select('*, transaction_items(*, items(name), sell_bundled_piles(*, items(name)))').eq('tx_type', 'SELL').eq('status', 'COMPLETED').gte('created_at', range.startISO).lte('created_at', range.endISO).order('created_at', { ascending: false }).limit(5000)
     ]);
 
     const transit = transitRes.data || [];
     const done = doneRes.data || [];
+    paging.sellDone.rows = done;
 
     const totalSellAmt = done.reduce((s, d) => s + Number(d.total_amount), 0);
     const totalProfit = done.reduce((s, d) => s + Number(d.realized_profit || 0), 0);
@@ -349,26 +485,7 @@ export function initBackoffice({ state, loadInitialData, renderCart }) {
       `;
     }).join('') : `<div class="text-slate-500 text-sm text-center py-4">ไม่มีเที่ยวรถที่รอใบชั่ง</div>`;
 
-    document.getElementById('completed-sell-list').innerHTML = done.length ? done.map(d => {
-      const ti = d.transaction_items?.[0];
-      const yieldKg = ti?.sell_bundled_piles?.[0]?.estimated_yield_kg;
-      const dtStr = new Date(d.created_at).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' });
-      return `
-        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3 flex flex-wrap justify-between items-center gap-2 text-sm">
-          <div>
-            <div class="font-bold flex items-center gap-2">
-              <span>${d.bill_no} (${d.customer_or_factory_name || '-'}) — ${ti?.items?.name}</span>
-              <span class="text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded">${dtStr}</span>
-            </div>
-            <div class="text-xs text-slate-400 mt-0.5">ขายจริง ${fmtWeight(d.total_weight_kg)} กก. × ${fmtMoney(ti?.unit_price)} ฿ ${yieldKg > 0 ? `| เนื้อที่ได้จากกองพ่วง: ${fmtWeight(yieldKg)} กก.` : ''}</div>
-          </div>
-          <div class="text-right ml-auto">
-            <div class="font-bold text-emerald-400">รับ ${fmtMoney(d.total_amount)} ฿</div>
-            <div class="text-xs ${d.realized_profit >= 0 ? 'text-sky-400' : 'text-red-400'}">กำไรสุทธิ: ${fmtMoney(d.realized_profit)} ฿</div>
-          </div>
-        </div>
-      `;
-    }).join('') : `<div class="text-slate-500 text-sm text-center py-6">ไม่มีประวัติการขายในช่วง ${range.label}</div>`;
+    renderSellDonePage();
   };
 
   window.renderBundleCheckboxes = () => {
@@ -445,7 +562,7 @@ export function initBackoffice({ state, loadInitialData, renderCart }) {
     }
 
     const [txRes, userRes] = await Promise.all([
-      supabase.from('transactions').select('*').gte('created_at', range.startISO).lte('created_at', range.endISO).order('created_at', { ascending: false }),
+      supabase.from('transactions').select('*').gte('created_at', range.startISO).lte('created_at', range.endISO).order('created_at', { ascending: false }).limit(5000),
       supabase.from('profiles').select('*').order('created_at')
     ]);
 
@@ -461,14 +578,9 @@ export function initBackoffice({ state, loadInitialData, renderCart }) {
     document.getElementById('chart-flow-title').textContent = `ยอดรับซื้อเข้า vs ขายออก (${range.label})`;
 
     const voids = txs.filter(t => t.status === 'VOIDED');
+    paging.ownerVoids.rows = voids;
     document.getElementById('ow-void-count').textContent = `${voids.length} ใบ`;
-
-    document.getElementById('owner-void-log').innerHTML = voids.map(v => `
-      <div class="bg-slate-900 border border-red-900/40 rounded-xl p-2.5 text-xs flex justify-between gap-2">
-        <span><strong>${v.bill_no}</strong> (${fmtMoney(v.total_amount)} ฿) — เหตุผล: ${v.void_reason}</span>
-        <span class="text-slate-400 shrink-0">${new Date(v.voided_at || v.created_at).toLocaleDateString('th-TH')}</span>
-      </div>
-    `).join('') || `<div class="text-slate-500 text-xs">ไม่มีบิลถูกยกเลิกในช่วง ${range.label}</div>`;
+    renderOwnerVoidsPage();
 
     document.getElementById('owner-items-cards').innerHTML = state.items.map(it => {
       const avg = it.current_stock_kg > 0 ? (it.current_total_cost / it.current_stock_kg) : 0;
